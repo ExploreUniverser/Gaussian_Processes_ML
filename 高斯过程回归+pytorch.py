@@ -1,9 +1,11 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.optim.lr_scheduler import StepLR
 import matplotlib.pyplot as plt
+
 class dataset(Dataset):
     def __init__(self,x_train,y_train,num_one_train):
         super(dataset,self).__init__()
@@ -24,12 +26,16 @@ class MLP(nn.Module):
     def __init__(self, ninp, nhid):
         super(MLP, self).__init__()
         self.inlayer = nn.Linear(ninp,nhid)
-        self.hidlayer = nn.Tanh()
+        self.hidlayer1 = nn.Linear(nhid, nhid)
+        # self.bn = nn.LayerNorm(nhid)
+        self.hidlayer2 = nn.ReLU()
         self.outlayer = nn.Linear(nhid,nhid)
     def forward(self,x):
         out = self.inlayer(x)
-        out = self.hidlayer(out)
+        out = self.hidlayer1(out)
+        out = self.hidlayer2(out)
         out = self.outlayer(out)
+        out = F.normalize(out, dim=-1)
         return out
 class Gauss_re(nn.Module):
     def __init__(self, ninp, nhid,alpha=0.00001):
@@ -43,11 +49,12 @@ class Gauss_re(nn.Module):
         x_ = self.embed(x_)
         for i in range(x.size(0)):
             K_ = torch.cosine_similarity(x_[i].unsqueeze(1),x[i].unsqueeze(0),dim=2)
-            K_ = (K_+1)/2
+            K_ = torch.sqrt(K_**2)
             K = torch.cosine_similarity(x[i].unsqueeze(1),x[i].unsqueeze(0),dim=2)
-            K = (K+1)/2
+            K = torch.sqrt(K**2)
             out[i] = K_@torch.inverse(K+self.alpha*torch.eye(K.size(0)))@y[i]
         return out
+    # def forward(self):
 x = torch.linspace(0,4*np.pi,1000).reshape((-1,1))
 y = torch.sin(x)
 train_x = x[torch.randperm(x.size(0))[:39]][None,:,:]
@@ -60,9 +67,9 @@ dataset = dataset(x_train=x,y_train=y,num_one_train=40)
 train_loader = torch.utils.data.DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True,drop_last=True)
 
 model = Gauss_re(ninp=1,nhid=10)
-optimizer = torch.optim.Adam(model.parameters(),lr=0.1)
+optimizer = torch.optim.Adam(model.parameters(),lr=0.01)
 loss_func = nn.MSELoss()
-scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
+scheduler = StepLR(optimizer, step_size=10, gamma=0.99)
 for epoch in range(1000):
     model.train()
     avg_loss = 0
